@@ -22,6 +22,13 @@ BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
 ICON_PNG = os.path.join(BASE_DIR, "NeXusMagic.png")
 ICON_ICO = os.path.join(BASE_DIR, "NeXusMagic.ico")
 HEADER_LOGO_PNG = os.path.join(BASE_DIR, "assets", "icons", "icon-36.png")
+TOOL_LOGOS_DIR = os.path.join(BASE_DIR, "assets", "tools")
+TOOL_LOGO_FILES = {
+    "Blitz App": "blitz.png",
+    "Mobalytics": "mobalytics.png",
+    "Porofessor": "porofessor.png",
+    "U.GG Desktop App": "ugg.png",
+}
 
 # League-inspired dark palette
 COLOR_BG = "#0A1428"
@@ -155,6 +162,17 @@ class App(ctk.CTk):
             hover_color="#2A2F36", command=self._open_settings,
         ).pack(side="right", padx=16, pady=12)
 
+        # Companion tools strip - detected app logos, sits right under the header.
+        # Packed/unpacked dynamically depending on what's detected.
+        self._tool_icon_images = {}
+        self.tools_frame = ctk.CTkFrame(self, fg_color="transparent")
+        ctk.CTkLabel(
+            self.tools_frame, text=tracked("DETECTED"), font=ctk.CTkFont(family=MONO_FONT, size=10, weight="bold"),
+            text_color=COLOR_MUTED,
+        ).pack(side="left", padx=(0, 10))
+        self.tools_icons_row = ctk.CTkFrame(self.tools_frame, fg_color="transparent")
+        self.tools_icons_row.pack(side="left")
+
         # Status badge - two-tone "STATUS | VALUE" pill, matching assets/status-badges.png
         self.status_card = ctk.CTkFrame(self, fg_color="transparent")
         self.status_card.pack(fill="x", padx=16, pady=8)
@@ -176,15 +194,6 @@ class App(ctk.CTk):
         # Keep the status text wrapped within the chip's actual rendered
         # width (a fixed guess clips or overflows depending on window size).
         self.status_value_chip.bind("<Configure>", self._on_status_chip_resize)
-
-        # Companion tools panel
-        self.tools_frame = ctk.CTkFrame(self, fg_color=COLOR_PANEL, corner_radius=12)
-        self.tools_label = ctk.CTkLabel(
-            self.tools_frame, text="", font=ctk.CTkFont(family=MONO_FONT, size=12), text_color=COLOR_GREEN,
-            wraplength=400, justify="left",
-        )
-        self.tools_label.pack(padx=12, pady=10, anchor="w")
-        # packed/unpacked dynamically depending on detections
 
         # Activity log
         self._log_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -259,11 +268,29 @@ class App(ctk.CTk):
         self.log_box.configure(state="disabled")
 
     def _apply_tools(self, tools):
-        if tools:
-            self.tools_label.configure(text=f"COMPANION TOOLS DETECTED: {', '.join(tools)}")
-            self.tools_frame.pack(fill="x", padx=16, pady=(0, 8), before=self._log_frame)
-        else:
+        for child in self.tools_icons_row.winfo_children():
+            child.destroy()
+
+        if not tools:
             self.tools_frame.pack_forget()
+            return
+
+        for name in tools:
+            filename = TOOL_LOGO_FILES.get(name)
+            if not filename:
+                continue
+            path = os.path.join(TOOL_LOGOS_DIR, filename)
+            if not os.path.exists(path):
+                continue
+            if name not in self._tool_icon_images:
+                from PIL import Image
+                img = Image.open(path)
+                self._tool_icon_images[name] = ctk.CTkImage(light_image=img, dark_image=img, size=(28, 28))
+            chip = ctk.CTkFrame(self.tools_icons_row, fg_color=BADGE_CHIP_BG, corner_radius=6)
+            chip.pack(side="left", padx=(0, 6))
+            ctk.CTkLabel(chip, image=self._tool_icon_images[name], text="").pack(padx=5, pady=5)
+
+        self.tools_frame.pack(fill="x", padx=16, pady=(0, 8), before=self.status_card)
 
     def _on_close(self):
         self.engine.stop()

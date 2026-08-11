@@ -53,8 +53,10 @@ def compile_to_exe(gui=True):
 
     except FileNotFoundError as e:
         print(e)
-    except subprocess.CalledProcessError:
-        print("\n[-] Error: PyInstaller build routine halted.")
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print(f"\n[-] Error: PyInstaller build routine halted (exit code {e.returncode}).")
+        sys.exit(1)
 
 if __name__ == "__main__":
     compile_to_exe(gui="--console" not in sys.argv)
