@@ -67,6 +67,34 @@ ctk.set_default_color_theme("dark-blue")
 register_bundled_fonts()
 
 
+def _apply_window_icon(window, delayed=False):
+    """Set the app icon on a Tk/CTk window.
+
+    CTkToplevel resets its icon to Tk's default right after creation, so
+    Toplevels need the call deferred a tick (via `after`) or it gets
+    clobbered.
+    """
+    def _set():
+        try:
+            if platform.system() == "Windows" and os.path.exists(ICON_ICO):
+                window.iconbitmap(ICON_ICO)
+        except Exception:
+            pass
+        try:
+            if os.path.exists(ICON_PNG):
+                from PIL import Image, ImageTk
+                img = Image.open(ICON_PNG)
+                window._icon_photo = ImageTk.PhotoImage(img)
+                window.iconphoto(True, window._icon_photo)
+        except Exception:
+            pass
+
+    if delayed:
+        window.after(250, _set)
+    else:
+        _set()
+
+
 class SettingsWindow(ctk.CTkToplevel):
     def __init__(self, master, engine: Engine):
         super().__init__(master)
@@ -76,6 +104,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.resizable(False, False)
         self.configure(fg_color=COLOR_BG)
         self.transient(master)
+        _apply_window_icon(self, delayed=True)
         self.grab_set()
 
         ctk.CTkLabel(
@@ -127,19 +156,7 @@ class App(ctk.CTk):
         self.after(100, self._poll_events)
 
     def _set_icon(self):
-        try:
-            if platform.system() == "Windows" and os.path.exists(ICON_ICO):
-                self.iconbitmap(ICON_ICO)
-        except Exception:
-            pass
-        try:
-            if os.path.exists(ICON_PNG):
-                from PIL import Image, ImageTk
-                img = Image.open(ICON_PNG)
-                self._icon_photo = ImageTk.PhotoImage(img)
-                self.iconphoto(True, self._icon_photo)
-        except Exception:
-            pass
+        _apply_window_icon(self)
 
     # -- UI construction -------------------------------------------------
     def _build_ui(self):

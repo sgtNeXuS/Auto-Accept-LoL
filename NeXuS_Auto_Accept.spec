@@ -37,9 +37,3 @@ exe = EXE(
     entitlements_file=None,
     icon=['NeXusMagic.ico'],
 )
-app = BUNDLE(
-    exe,
-    name='NeXuS_Auto_Accept.app',
-    icon='NeXusMagic.ico',
-    bundle_identifier=None,
-)
