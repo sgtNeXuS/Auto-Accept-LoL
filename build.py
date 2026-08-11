@@ -3,6 +3,13 @@ import sys
 import subprocess
 from PIL import Image
 
+# Windows consoles default to a legacy codepage (e.g. cp1252) that can't
+# encode the checkmarks below, which crashed this script instantly on every
+# Windows run (local and CI). Force UTF-8 so the box-drawing/status glyphs
+# always work.
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
+
 def convert_png_to_ico(png_path="icon.png", ico_path="NeXusMagic.ico"):
     """Converts a user-provided PNG file into a multi-resolution Windows ICO structure."""
     if not os.path.exists(png_path):
