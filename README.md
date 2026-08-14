@@ -4,6 +4,7 @@
 
 [![Build and release Windows exe](https://github.com/sgtNeXuS/Auto-Accept-LoL/actions/workflows/release.yml/badge.svg)](https://github.com/sgtNeXuS/Auto-Accept-LoL/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/sgtNeXuS/Auto-Accept-LoL?style=flat-square&labelColor=1E2328&color=C8AA6E)](https://github.com/sgtNeXuS/Auto-Accept-LoL/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-1E2328?style=flat-square&labelColor=1E2328&color=C8AA6E)](LICENSE)
 
 A background helper for League of Legends: it watches the League client and
 automatically accepts ready checks the instant a match is found, so you
