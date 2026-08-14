@@ -21,6 +21,11 @@ from urllib3.exceptions import InsecureRequestWarning
 
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
+# PyInstaller onefile builds unpack bundled data (--add-data) to sys._MEIPASS
+# at runtime rather than next to the script, so resolve assets relative to that.
+BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+READY_SOUND_PATH = os.path.join(BASE_DIR, "assets", "readysound.mp3")
+
 CONFIG_DIR = Path.home() / ".nexus_auto_accept"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
@@ -65,61 +70,28 @@ def save_config(cfg):
         pass
 
 
-_CHIME_WAV = None
-
-
-def _build_chime_wav():
-    """Render a quiet two-note sine chime as WAV bytes.
-
-    winsound.Beep() drives the PC speaker at a fixed, jarring full-volume
-    square wave with no way to turn it down. A generated sine tone at low
-    amplitude (with a short fade to avoid clicks) still respects the system
-    volume mixer but is far gentler.
-    """
-    import io
-    import math
-    import struct
-    import wave
-
-    sample_rate = 44100
-    volume = 0.18
-    notes = [(880, 150), (1175, 150)]
-
-    frames = bytearray()
-    for freq, duration_ms in notes:
-        n = int(sample_rate * duration_ms / 1000)
-        fade_n = max(1, int(sample_rate * 0.01))
-        for i in range(n):
-            fade = min(1.0, i / fade_n, (n - i) / fade_n)
-            sample = volume * fade * math.sin(2 * math.pi * freq * i / sample_rate)
-            frames += struct.pack("<h", int(sample * 32767))
-
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sample_rate)
-        wf.writeframes(frames)
-    return buf.getvalue()
-
-
 def play_sound():
     """Best-effort notification chime. Never raises."""
-    global _CHIME_WAV
     try:
         system = platform.system()
         if system == "Windows":
-            import winsound
-            if _CHIME_WAV is None:
-                _CHIME_WAV = _build_chime_wav()
-            winsound.PlaySound(_CHIME_WAV, winsound.SND_MEMORY | winsound.SND_ASYNC)
+            # winsound only handles uncompressed WAV, so drive the MCI API
+            # (stdlib ctypes, no extra dependency) to play the MP3 directly.
+            import ctypes
+            mci = ctypes.windll.winmm.mciSendStringW
+            mci("close readysound", None, 0, None)
+            mci(f'open "{READY_SOUND_PATH}" type mpegvideo alias readysound', None, 0, None)
+            mci("play readysound", None, 0, None)
         elif system == "Darwin":
             subprocess.run(
-                ["afplay", "/System/Library/Sounds/Glass.aiff"],
+                ["afplay", READY_SOUND_PATH],
                 check=False, capture_output=True,
             )
         else:
-            print("\a", end="", flush=True)
+            subprocess.run(
+                ["mpg123", "-q", READY_SOUND_PATH],
+                check=False, capture_output=True,
+            )
     except Exception:
         pass
 
