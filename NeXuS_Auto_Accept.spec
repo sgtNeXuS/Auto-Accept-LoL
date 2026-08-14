@@ -5,7 +5,7 @@ a = Analysis(
     ['nexus_gui.py'],
     pathex=[],
     binaries=[],
-    datas=[('NeXusMagic.png', '.'), ('assets', 'assets')],
+    datas=[('NeXusMagic.png', '.'), ('NeXusMagic.ico', '.'), ('assets', 'assets')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

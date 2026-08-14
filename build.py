@@ -1,3 +1,4 @@
+import glob
 import os
 import sys
 import subprocess
@@ -23,6 +24,43 @@ def convert_png_to_ico(png_path="icon.png", ico_path="NeXusMagic.ico"):
     img.save(ico_path, format="ICO", sizes=sizes)
     print(f"[✓] Icon successfully compiled and saved to: {ico_path}")
 
+def find_signtool():
+    """Locate signtool.exe: PATH first, then the newest Windows Kits install."""
+    from shutil import which
+    found = which("signtool")
+    if found:
+        return found
+    candidates = glob.glob(
+        r"C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe"
+    )
+    return max(candidates) if candidates else None
+
+
+def sign_exe(exe_path):
+    """Best-effort Authenticode signing with whatever code-signing cert is
+    installed in the current user's certificate store. Never fails the
+    build: CI machines and fresh checkouts have no such cert, and that's
+    fine, they just end up with an unsigned exe like before."""
+    signtool = find_signtool()
+    if not signtool:
+        print("[*] signtool.exe not found; skipping signing.")
+        return
+    try:
+        subprocess.run(
+            [
+                signtool, "sign",
+                "/fd", "SHA256",
+                "/a",
+                "/t", "http://timestamp.digicert.com",
+                exe_path,
+            ],
+            check=True,
+        )
+        print(f"[✓] Signed {exe_path}")
+    except subprocess.CalledProcessError:
+        print("[*] No usable code-signing certificate found; left unsigned.")
+
+
 def compile_to_exe(gui=True):
     png_source = "NeXusMagic.png"
     final_ico = "NeXusMagic.ico"
@@ -46,6 +84,7 @@ def compile_to_exe(gui=True):
             command += [
                 "--windowed",
                 f"--add-data={png_source}{data_sep}.",
+                f"--add-data={final_ico}{data_sep}.",
                 f"--add-data=assets{data_sep}assets",
             ]
         command.append(script_name)
@@ -57,6 +96,9 @@ def compile_to_exe(gui=True):
         print(f"\n{'-'*60}\n[✓] SUCCESS! Standalone {kind} application compiled with custom branding.")
         print(f"File path: dist/{exe_name}.exe")
         print(f"[✓] Note: Your permanent icon file is available at: ./{final_ico}")
+
+        # 4. Sign the binary, if a code-signing cert is available locally.
+        sign_exe(os.path.join("dist", f"{exe_name}.exe"))
 
     except FileNotFoundError as e:
         print(e)

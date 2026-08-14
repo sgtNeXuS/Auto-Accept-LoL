@@ -65,14 +65,54 @@ def save_config(cfg):
         pass
 
 
+_CHIME_WAV = None
+
+
+def _build_chime_wav():
+    """Render a quiet two-note sine chime as WAV bytes.
+
+    winsound.Beep() drives the PC speaker at a fixed, jarring full-volume
+    square wave with no way to turn it down. A generated sine tone at low
+    amplitude (with a short fade to avoid clicks) still respects the system
+    volume mixer but is far gentler.
+    """
+    import io
+    import math
+    import struct
+    import wave
+
+    sample_rate = 44100
+    volume = 0.18
+    notes = [(880, 150), (1175, 150)]
+
+    frames = bytearray()
+    for freq, duration_ms in notes:
+        n = int(sample_rate * duration_ms / 1000)
+        fade_n = max(1, int(sample_rate * 0.01))
+        for i in range(n):
+            fade = min(1.0, i / fade_n, (n - i) / fade_n)
+            sample = volume * fade * math.sin(2 * math.pi * freq * i / sample_rate)
+            frames += struct.pack("<h", int(sample * 32767))
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(frames)
+    return buf.getvalue()
+
+
 def play_sound():
     """Best-effort notification chime. Never raises."""
+    global _CHIME_WAV
     try:
         system = platform.system()
         if system == "Windows":
             import winsound
-            winsound.Beep(880, 150)
-            winsound.Beep(1175, 150)
+            if _CHIME_WAV is None:
+                _CHIME_WAV = _build_chime_wav()
+            winsound.PlaySound(_CHIME_WAV, winsound.SND_MEMORY | winsound.SND_ASYNC)
         elif system == "Darwin":
             subprocess.run(
                 ["afplay", "/System/Library/Sounds/Glass.aiff"],
