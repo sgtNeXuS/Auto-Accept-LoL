@@ -56,7 +56,7 @@ STATUS_TEXT_COLORS = {
     "green": COLOR_BG,
     "red": COLOR_TEXT,
 }
-BADGE_CHIP_BG = "#23272B"
+BADGE_CHIP_BG = COLOR_PANEL
 
 
 def tracked(text, gap=" "):
