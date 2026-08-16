@@ -25,6 +25,10 @@ requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 # at runtime rather than next to the script, so resolve assets relative to that.
 BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
 READY_SOUND_PATH = os.path.join(BASE_DIR, "assets", "readysound.mp3")
+# The mp3 itself is mastered at full volume, unlike the old synthesized
+# chime which baked a quiet amplitude into the waveform - so playback
+# volume has to be scaled down explicitly per-platform.
+DEFAULT_SOUND_VOLUME = 0.2
 
 CONFIG_DIR = Path.home() / ".nexus_auto_accept"
 CONFIG_PATH = CONFIG_DIR / "config.json"
@@ -32,6 +36,7 @@ CONFIG_PATH = CONFIG_DIR / "config.json"
 DEFAULT_CONFIG = {
     "auto_accept_enabled": True,
     "play_sound": True,
+    "sound_volume": DEFAULT_SOUND_VOLUME,
     "show_notification": True,
     "launch_on_startup": False,
 }
@@ -70,8 +75,9 @@ def save_config(cfg):
         pass
 
 
-def play_sound():
+def play_sound(volume=DEFAULT_SOUND_VOLUME):
     """Best-effort notification chime. Never raises."""
+    volume = max(0.0, min(1.0, volume))
     try:
         system = platform.system()
         if system == "Windows":
@@ -81,15 +87,16 @@ def play_sound():
             mci = ctypes.windll.winmm.mciSendStringW
             mci("close readysound", None, 0, None)
             mci(f'open "{READY_SOUND_PATH}" type mpegvideo alias readysound', None, 0, None)
+            mci(f"setaudio readysound volume to {int(volume * 1000)}", None, 0, None)
             mci("play readysound", None, 0, None)
         elif system == "Darwin":
             subprocess.run(
-                ["afplay", READY_SOUND_PATH],
+                ["afplay", "-v", str(volume), READY_SOUND_PATH],
                 check=False, capture_output=True,
             )
         else:
             subprocess.run(
-                ["mpg123", "-q", READY_SOUND_PATH],
+                ["mpg123", "-q", "-f", str(int(volume * 32768)), READY_SOUND_PATH],
                 check=False, capture_output=True,
             )
     except Exception:
@@ -138,6 +145,8 @@ class Engine:
         self.on_event = on_event
         self.config = load_config()
         self.detected_tools = []
+        self._champion_names = {}
+        self._champ_select_shown = False
         self._exit = threading.Event()
         self._thread = None
 
@@ -230,7 +239,8 @@ class Engine:
 
     def _notify_match_found(self):
         if self.config.get("play_sound", True):
-            threading.Thread(target=play_sound, daemon=True).start()
+            volume = self.config.get("sound_volume", DEFAULT_SOUND_VOLUME)
+            threading.Thread(target=play_sound, args=(volume,), daemon=True).start()
         if self.config.get("show_notification", True):
             threading.Thread(
                 target=show_notification,
@@ -287,6 +297,51 @@ class Engine:
             self._emit_status("ACCEPT FAILED - CHECK CLIENT", "red")
             self._log("Could not confirm accept within timeout - check the client")
 
+    def _load_champion_names(self, base_url, headers):
+        """Cache championId -> name from the client's local game-data assets
+        (no internet required, served by the LCU itself)."""
+        if self._champion_names:
+            return
+        try:
+            r = requests.get(
+                f"{base_url}/lol-game-data/assets/v1/champion-summary.json",
+                headers=headers, verify=False, timeout=5,
+            )
+            if r.status_code == 200:
+                for champ in r.json():
+                    champ_id, name = champ.get("id"), champ.get("name")
+                    if champ_id is not None and name:
+                        self._champion_names[champ_id] = name
+        except requests.exceptions.RequestException:
+            pass
+
+    def _handle_champ_select(self, base_url, headers):
+        self._emit_status("CHAMPION SELECT IN PROGRESS", "green")
+        self._load_champion_names(base_url, headers)
+        try:
+            r = requests.get(f"{base_url}/lol-champ-select/v1/session", headers=headers, verify=False, timeout=3)
+            if r.status_code != 200:
+                return
+            picks = []
+            for member in r.json().get("myTeam", []):
+                champ_id = member.get("championId") or 0
+                intent_id = member.get("championPickIntent") or 0
+                if champ_id:
+                    picks.append(self._champion_names.get(champ_id, "?"))
+                elif intent_id:
+                    picks.append(f"{self._champion_names.get(intent_id, '?')} (picking)")
+                else:
+                    picks.append(None)
+            self.on_event("champ_select", {"champions": picks})
+            self._champ_select_shown = True
+        except requests.exceptions.RequestException:
+            pass
+
+    def _clear_champ_select(self):
+        if self._champ_select_shown:
+            self.on_event("champ_select", {"champions": []})
+            self._champ_select_shown = False
+
     # -- main loop -----------------------------------------------------
     def _run(self):
         self._emit_status("WAITING FOR LEAGUE CLIENT...", "info")
@@ -316,8 +371,12 @@ class Engine:
                 try:
                     phase = self._get_phase(base_url, headers)
                     if phase is None:
+                        self._clear_champ_select()
                         client_connected = False
                         break
+
+                    if phase != "ChampSelect":
+                        self._clear_champ_select()
 
                     if phase in ("Lobby", "None"):
                         is_searching = False
@@ -339,8 +398,9 @@ class Engine:
                     elif phase == "ReadyCheck":
                         self._handle_ready_check(base_url, headers)
                     elif phase == "ChampSelect":
-                        self._emit_status("CHAMPION SELECT IN PROGRESS", "green")
+                        self._handle_champ_select(base_url, headers)
                     elif phase == "InProgress":
+                        self._clear_champ_select()
                         self._wait_for_game_to_end()
                         self._check_moba_tools()
                         client_connected = False
@@ -348,6 +408,7 @@ class Engine:
                     else:
                         self._emit_status(phase.upper() if phase else "UNKNOWN STATE", "info")
                 except requests.exceptions.RequestException:
+                    self._clear_champ_select()
                     time.sleep(2)
                     if self._is_game_running():
                         self._wait_for_game_to_end()

@@ -8,11 +8,12 @@ import os
 import platform
 import queue
 import sys
+import threading
 import time
 
 import customtkinter as ctk
 
-from backend import Engine
+from backend import Engine, play_sound
 from fonts import HEADING_FONT, MONO_FONT, register_bundled_fonts
 
 APP_NAME = "NeXuS Auto Accept"
@@ -100,7 +101,7 @@ class SettingsWindow(ctk.CTkToplevel):
         super().__init__(master)
         self.engine = engine
         self.title("Settings")
-        self.geometry("340x260")
+        self.geometry("340x330")
         self.resizable(False, False)
         self.configure(fg_color=COLOR_BG)
         self.transient(master)
@@ -112,6 +113,7 @@ class SettingsWindow(ctk.CTkToplevel):
         ).pack(pady=(16, 8))
 
         self._add_switch("play_sound", "Play sound on match found")
+        self._add_volume_slider()
         self._add_switch("show_notification", "Show desktop notification")
 
         startup_switch = self._add_switch("launch_on_startup", "Launch on Windows startup")
@@ -135,6 +137,36 @@ class SettingsWindow(ctk.CTkToplevel):
         )
         switch.pack(anchor="w", padx=24, pady=6)
         return switch
+
+    def _add_volume_slider(self):
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x", padx=24, pady=(0, 10))
+
+        header = ctk.CTkFrame(row, fg_color="transparent")
+        header.pack(fill="x")
+        ctk.CTkLabel(header, text="Volume", text_color=COLOR_MUTED, font=ctk.CTkFont(size=12)).pack(side="left")
+        value_label = ctk.CTkLabel(
+            header, text=f"{int(self.engine.config.get('sound_volume', 0.2) * 100)}%",
+            text_color=COLOR_MUTED, font=ctk.CTkFont(size=12),
+        )
+        value_label.pack(side="right")
+
+        def on_move(value):
+            value_label.configure(text=f"{int(float(value) * 100)}%")
+
+        def on_release(_event=None):
+            volume = round(slider.get(), 2)
+            self.engine.update_setting("sound_volume", volume)
+            # Preview so the user can hear the level they just picked.
+            threading.Thread(target=play_sound, args=(volume,), daemon=True).start()
+
+        slider = ctk.CTkSlider(
+            row, from_=0.0, to=1.0, number_of_steps=20, command=on_move,
+            progress_color=COLOR_BLUE, button_color=COLOR_GOLD, button_hover_color="#B0925C",
+        )
+        slider.set(self.engine.config.get("sound_volume", 0.2))
+        slider.pack(fill="x", pady=(6, 0))
+        slider.bind("<ButtonRelease-1>", on_release)
 
 
 class App(ctk.CTk):
@@ -212,6 +244,17 @@ class App(ctk.CTk):
         # width (a fixed guess clips or overflows depending on window size).
         self.status_value_chip.bind("<Configure>", self._on_status_chip_resize)
 
+        # Champion select panel - shows teammates' picks, only shown while
+        # champ select is active. Kept collapsed the rest of the time so it
+        # doesn't reserve dead space in the layout.
+        self.champ_frame = ctk.CTkFrame(self, fg_color=COLOR_PANEL, corner_radius=12)
+        ctk.CTkLabel(
+            self.champ_frame, text=tracked("CHAMPION SELECT"), font=ctk.CTkFont(family=MONO_FONT, size=11, weight="bold"),
+            text_color=COLOR_MUTED,
+        ).pack(anchor="w", padx=12, pady=(10, 4))
+        self.champ_list_frame = ctk.CTkFrame(self.champ_frame, fg_color="transparent")
+        self.champ_list_frame.pack(fill="x", padx=12, pady=(0, 10))
+
         # Activity log
         self._log_frame = ctk.CTkFrame(self, fg_color="transparent")
         self._log_frame.pack(fill="both", expand=True, padx=16, pady=8)
@@ -270,6 +313,8 @@ class App(ctk.CTk):
                     self._append_log(payload["time"], payload["text"])
                 elif kind == "tools":
                     self._apply_tools(payload["tools"])
+                elif kind == "champ_select":
+                    self._apply_champ_select(payload["champions"])
         except queue.Empty:
             pass
         self.after(100, self._poll_events)
@@ -308,6 +353,23 @@ class App(ctk.CTk):
             ctk.CTkLabel(chip, image=self._tool_icon_images[name], text="").pack(padx=5, pady=5)
 
         self.tools_frame.pack(fill="x", padx=16, pady=(0, 8), before=self.status_card)
+
+    def _apply_champ_select(self, champions):
+        for child in self.champ_list_frame.winfo_children():
+            child.destroy()
+
+        if not champions:
+            self.champ_frame.pack_forget()
+            return
+
+        for name in champions:
+            chip = ctk.CTkFrame(self.champ_list_frame, fg_color=BADGE_CHIP_BG, corner_radius=6)
+            chip.pack(side="left", padx=(0, 6), pady=2)
+            ctk.CTkLabel(
+                chip, text=name or "—", font=ctk.CTkFont(family=MONO_FONT, size=11), text_color=COLOR_TEXT,
+            ).pack(padx=8, pady=4)
+
+        self.champ_frame.pack(fill="x", padx=16, pady=(0, 8), before=self._log_frame)
 
     def _on_close(self):
         self.engine.stop()
