@@ -15,6 +15,7 @@ import customtkinter as ctk
 
 from backend import Engine, play_sound
 from fonts import HEADING_FONT, MONO_FONT, register_bundled_fonts
+from version import VERSION
 
 APP_NAME = "NeXuS Auto Accept"
 # PyInstaller onefile builds unpack bundled data (--add-data) to sys._MEIPASS
@@ -101,7 +102,7 @@ class SettingsWindow(ctk.CTkToplevel):
         super().__init__(master)
         self.engine = engine
         self.title("Settings")
-        self.geometry("340x330")
+        self.geometry("340x350")
         self.resizable(False, False)
         self.configure(fg_color=COLOR_BG)
         self.transient(master)
@@ -123,7 +124,10 @@ class SettingsWindow(ctk.CTkToplevel):
                 self, text="(Windows only)", font=ctk.CTkFont(size=11), text_color=COLOR_MUTED
             ).pack()
 
-        ctk.CTkButton(self, text="Close", command=self.destroy, fg_color=COLOR_PANEL).pack(pady=16)
+        ctk.CTkButton(self, text="Close", command=self.destroy, fg_color=COLOR_PANEL).pack(pady=(16, 4))
+        ctk.CTkLabel(
+            self, text=f"v{VERSION}", font=ctk.CTkFont(size=10), text_color=COLOR_MUTED
+        ).pack(pady=(0, 8))
 
     def _add_switch(self, key, label):
         var = ctk.BooleanVar(value=self.engine.config.get(key, True))
@@ -172,7 +176,7 @@ class SettingsWindow(ctk.CTkToplevel):
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title(APP_NAME)
+        self.title(f"{APP_NAME} v{VERSION}")
         self.geometry("480x580")
         self.minsize(440, 500)
         self.configure(fg_color=COLOR_BG)

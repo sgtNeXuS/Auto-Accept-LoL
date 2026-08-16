@@ -24,6 +24,18 @@ def convert_png_to_ico(png_path="icon.png", ico_path="NeXusMagic.ico"):
     img.save(ico_path, format="ICO", sizes=sizes)
     print(f"[✓] Icon successfully compiled and saved to: {ico_path}")
 
+def write_version_file():
+    """Stamp version.py with the tag being built (CI sets GITHUB_REF_NAME to
+    e.g. "v1.0.5" on a tag push). Local/manual builds keep whatever version
+    is already checked in, so they're distinguishable from a real release."""
+    ref = os.environ.get("GITHUB_REF_NAME", "")
+    if ref.startswith("v"):
+        version = ref[1:]
+        with open("version.py", "w", encoding="utf-8") as f:
+            f.write(f'VERSION = "{version}"\n')
+        print(f"[*] Baked version {version} into version.py")
+
+
 def find_signtool():
     """Locate signtool.exe: PATH first, then the newest Windows Kits install."""
     from shutil import which
@@ -70,6 +82,7 @@ def compile_to_exe(gui=True):
     try:
         # 1. Translate the PNG into the permanent NeXusMagic.ico file
         convert_png_to_ico(png_source, final_ico)
+        write_version_file()
 
         # 2. Structure compiler variables
         data_sep = ";" if os.name == "nt" else ":"
